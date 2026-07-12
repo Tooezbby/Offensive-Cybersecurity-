@@ -3,7 +3,7 @@
 
 ## Tasks
 
-> [!danger] Task 1
+> ## Task 1
 > **How many SMB shares are shared by the target?**
 
 Lo primero fue enumerar los recursos compartidos SMB del servidor para identificar posibles puntos de acceso a información sensible.
