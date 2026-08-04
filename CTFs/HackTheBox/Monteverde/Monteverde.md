@@ -102,11 +102,11 @@ El grupo Azure Admins tiene permisos sobre el servicio de Azure AD Connect, que 
 
 Buscamos el repositorio en GitHub con la herramienta necesaria:
 
-![Repositorio de GitHub](images/task8_repo.png)
+![Repositorio de GitHub](images/Task8_repo.png)
 
 Lo descargamos y lo descomprimimos:
 
-![Descompresión de la herramienta](images/task8_unzip.png)
+![Descompresión de la herramienta](images/Task8_unzip.png)
 
 Ahora solo tenemos que pasar el `.exe` y el `.dll` a la máquina víctima:
 
