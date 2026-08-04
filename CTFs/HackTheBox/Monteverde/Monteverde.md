@@ -6,7 +6,7 @@
 
 Lo primero que hacemos, como siempre, es lanzar un `nmap` para ver qué puertos tenemos abiertos.
 
-![nmap](/images/task1_nmap.png)
+![nmap](images/task1_nmap.png)
 
 Utilizamos `netexec` porque vemos que hay varios puertos que tienen que ver con un AD (53, 88, 389, 445, 464, 3268...).
 
