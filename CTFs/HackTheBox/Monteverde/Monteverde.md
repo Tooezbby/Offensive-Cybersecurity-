@@ -22,7 +22,7 @@ Primero, como no sabíamos lo que era AD Connect (o por lo menos yo no lo sabía
 
 Lo que entendemos aquí es que tenemos que enumerar usuarios, así que hacemos un `netexec` de usuarios anónimos:
 
-![Enumeración anónima de usuarios con netexec](images/task2_enum_usuarios.png)
+![Enumeración anónima de usuarios con netexec](images/task2_enum_users.png)
 
 Leyendo un poco, vemos que la cuenta de sincronización sería la correspondiente a **AAD** (Azure Active Directory).
 
