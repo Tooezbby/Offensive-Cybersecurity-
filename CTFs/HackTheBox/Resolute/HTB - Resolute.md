@@ -7,7 +7,7 @@ Lo primero que hacemos, como siempre, es lanzar un `nmap` para ver qué puertos 
 
 Vemos bastantes puertos típicos de un Active Directory (53, 88, 389, 445, 464, 3268...), así que usamos `netexec` por SMB para que nos identifique el dominio directamente.
 
-![nmap + netexec](/images/task1_nmap_netexec.png)
+![nmap + netexec](images/task1_nmap_netexec.png)
 
 El dominio es **megabank.local**.
 
