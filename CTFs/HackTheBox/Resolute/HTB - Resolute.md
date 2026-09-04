@@ -20,7 +20,7 @@ El dominio es **megabank.local**.
 
 Antes de nada intentamos enumerar los usuarios del dominio contra SMB usando una sesión nula (null session), por si el DC nos la permite.
 
-![Enumeración de usuarios con null session](Imagenes/task2_usuarios.png)
+![Enumeración de usuarios con null session](Imagenes/Task2_usuarios.png)
 
 La sesión nula funciona y conseguimos la lista completa de usuarios del dominio junto con su descripción. Si nos fijamos en la descripción del usuario `marko`, pone literalmente:
 
@@ -28,7 +28,7 @@ La sesión nula funciona y conseguimos la lista completa de usuarios del dominio
 
 Compruebo primero si `marko` sigue teniendo esa contraseña, y no es el caso. Como esa contraseña puede haberse usado como "contraseña por defecto" al crear otras cuentas de la misma forma, hago un password spray con todos los usuarios enumerados y esa misma contraseña.
 
-![Password spraying con Welcome123!](Imagenes/task2_melanie.png)
+![Password spraying con Welcome123!](Imagenes/Task2_melanie.png)
 
 El spray funciona: el usuario **melanie** tiene esa contraseña.
 
@@ -62,13 +62,13 @@ evil-winrm -i 10.129.96.155 -u melanie -p 'Welcome123!'
 
 Como no sabemos de entrada dónde guarda Windows el histórico de PowerShell por defecto, lo primero es buscar dónde se almacena.
 
-![Documentación sobre el histórico de PSReadLine](Imagenes/task5_historial_PS.png)
+![Documentación sobre el histórico de PSReadLine](Imagenes/Task5_historial_PS.png)
 
 Esa ruta (la de PSReadLine) es la que se genera automáticamente con cada sesión interactiva, pero al comprobarla en la máquina no encontramos nada ahí, ni en las carpetas habituales donde se suele buscar este tipo de artefactos.
 
 Windows oculta carpetas "raras" con el atributo Hidden, así que hay que forzar el listado con `dir -force` en cada directorio para no dejarnos nada por el camino. Repitiendo esto por las distintas carpetas de la unidad `C:` encontramos una llamada `PSTranscripts`, que no es la ubicación por defecto de PSReadLine sino el resultado de un *transcript* de PowerShell activado manualmente (o por GPO) con `Start-Transcript`, que registra en texto plano todo lo que ocurre en la sesión.
 
-![PSTranscripts](Imagenes/task5_ruta.png)
+![PSTranscripts](Imagenes/task5_Ruta.png)
 
 La ruta completa es:
 
@@ -179,10 +179,10 @@ sc.exe start dns
 
 Al arrancar de nuevo, el servicio carga nuestra DLL desde el share SMB, ejecuta el payload y recibimos la conexión en el listener, esta vez con privilegios de `NT AUTHORITY\SYSTEM`.
 
-![Shell como SYSTEM](Imagenes/task8_dobleshell.png)
+![Shell como SYSTEM](Imagenes/task8_doble_shell.png)
 
 Con esta shell accedemos al escritorio del Administrador y leemos la flag final.
 
-![Flag de root](Imagenes/task8_root.png)
+![Flag de root](Imagenes/Task8_done.png)
 
 Con esto, la máquina Resolute queda completada.
