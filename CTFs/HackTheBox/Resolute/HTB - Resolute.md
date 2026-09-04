@@ -68,7 +68,7 @@ Esa ruta (la de PSReadLine) es la que se genera automáticamente con cada sesió
 
 Windows oculta carpetas "raras" con el atributo Hidden, así que hay que forzar el listado con `dir -force` en cada directorio para no dejarnos nada por el camino. Repitiendo esto por las distintas carpetas de la unidad `C:` encontramos una llamada `PSTranscripts`, que no es la ubicación por defecto de PSReadLine sino el resultado de un *transcript* de PowerShell activado manualmente (o por GPO) con `Start-Transcript`, que registra en texto plano todo lo que ocurre en la sesión.
 
-![PSTranscripts](Imagenes/task5_Ruta.png)
+![PSTranscripts](Imagenes/Task5_ruta.png)
 
 La ruta completa es:
 
