@@ -168,7 +168,6 @@ Registry property serverlevelplugindll successfully reset.
 Command completed successfully.
 ```
 
-![Configuración de dnscmd y servidor SMB a la escucha](Imagenes/task8_dnscmd.png)
 
 El comando se ejecuta correctamente, pero la DLL no se carga todavía: la clave `ServerLevelPluginDll` solo se lee cuando el servicio DNS arranca, así que hace falta reiniciarlo para que el cambio surta efecto. Como `ryan` hereda permisos de administración del servicio DNS a través de `DnsAdmins`, puede reiniciarlo sin problema:
 
